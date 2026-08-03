@@ -1,0 +1,60 @@
+name: "wplace.live — Timelapse"
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  timelapse:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "📦 Checkout du dépôt"
+        uses: actions/checkout@v4
+
+      - name: "🐍 Installer Python 3.12"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: "📚 Installer les dépendances"
+        run: pip install -r requirements.txt
+
+      - name: "🎞️ Lancer le timelapse"
+        env:
+          TL_COLOR_TOLERANCE: ${{ vars.TL_COLOR_TOLERANCE }}
+        run: python timelapse.py
+
+      # Uploader les frames comme artifact GitHub (téléchargeables
+      # depuis l'onglet Actions, conservées 90 jours par défaut)
+      - name: "📤 Uploader les frames"
+        if: hashFiles('frames/*.png') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: timelapse-frame-${{ github.run_id }}
+          path: frames/
+          retention-days: 90
+
+      # Committer la référence mise à jour
+      - name: "💾 Committer la référence"
+        run: |
+          git config user.name "wplace-timelapse-bot"
+          git config user.email "bot@users.noreply.github.com"
+
+          git fetch origin main
+          git reset --soft origin/main
+
+          git add reference.png
+          git diff --cached --quiet && echo "Rien à committer." && exit 0
+
+          git commit -m "🤖 Mise à jour référence timelapse [skip ci]"
+
+          for i in 1 2 3; do
+            git push origin main && break
+            echo "⚠️ Push échoué (tentative $i/3), on pull et on réessaie..."
+            git pull --rebase origin main
+          done
